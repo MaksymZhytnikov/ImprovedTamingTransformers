@@ -7,23 +7,22 @@ transformers.logging.set_verbosity_error()
 def exists(val):
     return val is not None
 
-# config
-
+# Config
 MAX_LENGTH = 256
-
-DEFAULT_T5_NAME = 'google/t5-v1_1-base'
-
+DEFAULT_T5_NAME = 't5-large'
 T5_CONFIGS = {}
 
-# singleton globals
 
+# Singleton globals
 def get_tokenizer(name):
     tokenizer = T5Tokenizer.from_pretrained(name)
     return tokenizer
 
+
 def get_model(name):
     model = T5EncoderModel.from_pretrained(name)
     return model
+
 
 def get_model_and_tokenizer(name):
     global T5_CONFIGS
@@ -36,6 +35,7 @@ def get_model_and_tokenizer(name):
         T5_CONFIGS[name]["tokenizer"] = get_tokenizer(name)
 
     return T5_CONFIGS[name]['model'], T5_CONFIGS[name]['tokenizer']
+
 
 def get_encoded_dim(name):
     if name not in T5_CONFIGS:
@@ -50,8 +50,8 @@ def get_encoded_dim(name):
         assert False
     return config.d_model
 
-# encoding text
 
+# Encoding text
 def encode_text(texts, name=DEFAULT_T5_NAME, output_device=None):
     t5, tokenizer = get_model_and_tokenizer(name)
 

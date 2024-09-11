@@ -181,7 +181,7 @@ def create_gif(output_path='output.gif', folder_path='sampling', duration=100):
         print("🤔 No images found to create GIF")
 
     
-def save_image(generated_image, step, iteration, sampling_folder='sampling'):
+def save_image(generated_image, step, iteration='', sampling_folder='sampling', training=False):
     if not os.path.exists(sampling_folder):
         os.makedirs(sampling_folder)
         
@@ -197,7 +197,13 @@ def save_image(generated_image, step, iteration, sampling_folder='sampling'):
     
     # Enhance contrast
     enhancer = ImageEnhance.Contrast(pil_image)
-    pil_image = enhancer.enhance(3) 
+    pil_image = enhancer.enhance(2) 
+    
+    if training:
+        # Save the image
+        filename = f"{sampling_folder}/epoch_{step}.png"
+        pil_image.save(filename, 'PNG', quality=100)
+        return
     
     # Save the image
     filename = f"{sampling_folder}/image_iter{iteration}_step{step}.png"

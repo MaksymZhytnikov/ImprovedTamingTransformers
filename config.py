@@ -4,6 +4,9 @@ import torch
 VQGAN_CONFIG_COCO = "logs/2021-01-20T16-04-20_coco_transformer/configs/2021-02-08T17-18-53-project.yaml"
 VQGAN_CHECKPOINT_COCO = "logs/2021-01-20T16-04-20_coco_transformer/model_ckpt/last.ckpt"
 
+VQGAN_CONFIG_SFLCKR = "logs/2020-11-09T13-31-51_sflckr/configs/2020-11-09T13-31-51-project.yaml"
+VQGAN_CHECKPOINT_SFLCKR = "logs/2020-11-09T13-31-51_sflckr/model_ckpt/last.ckpt"
+
 # Set the device to CUDA if available, otherwise use CPU
 DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
@@ -56,4 +59,6 @@ CLIP_MODEL = 'ViT-B/32'
 STEP_SIZE = 0.1
 CUTN = 64
 CUT_POW = 1.0
-
+TEMPERATURE = 1.0
+TOP_K = 100
+UPDATE_EVERY = 50 

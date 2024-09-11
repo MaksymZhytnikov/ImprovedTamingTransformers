@@ -17,3 +17,6 @@ sentencepiece==0.2.0
 ftfy==6.2.0
 kornia==0.7.2
 python-xmp-toolkit==2.0.2
+pycocotools==2.0.8
+einops==0.8.0
+wandb==0.17.9

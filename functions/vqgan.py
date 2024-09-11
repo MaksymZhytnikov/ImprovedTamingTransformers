@@ -10,103 +10,15 @@ from PIL import Image
 import numpy as np
 from IPython.display import clear_output
 import time
+import matplotlib.pyplot as plt
 
 from taming.models import cond_transformer, vqgan
-
 import config
 from .utils import (
     show_image,
     show_segmentation,
     save_image,
 )
-
-class ReplaceGrad(torch.autograd.Function):
-    """
-    Custom autograd function to replace gradients during the backward pass.
-
-    This is useful in optimization problems where we want to use one tensor for
-    the forward pass and another tensor for the backward pass.
-    """
-    @staticmethod
-    def forward(ctx, x_forward, x_backward):
-        """
-        Forward pass returns x_forward.
-
-        Parameters:
-        x_forward (torch.Tensor): Forward tensor.
-        x_backward (torch.Tensor): Tensor used for backward gradient.
-
-        Returns:
-        torch.Tensor: x_forward tensor.
-        """
-        # Save the shape of the backward tensor for later use
-        ctx.shape = x_backward.shape
-        return x_forward
-
-    @staticmethod
-    def backward(ctx, grad_in):
-        """
-        Backward pass returns the sum of gradients for x_backward.
-
-        Parameters:
-        grad_in (torch.Tensor): Incoming gradient.
-
-        Returns:
-        tuple: None for x_forward, sum of gradients for x_backward.
-        """
-        # Return None for x_forward and the gradient for x_backward
-        return None, grad_in.sum_to_size(ctx.shape)
-
-
-class ClampWithGrad(torch.autograd.Function):
-    """
-    Custom autograd function to clamp input values with gradient computation.
-
-    This is useful for clamping values during training while retaining
-    the ability to compute gradients for backpropagation.
-    """
-    @staticmethod
-    def forward(ctx, input, min, max):
-        """
-        Forward pass clamps the input between min and max.
-
-        Parameters:
-        input (torch.Tensor): Input tensor.
-        min (float): Minimum value.
-        max (float): Maximum value.
-
-        Returns:
-        torch.Tensor: Clamped tensor.
-        """
-        # Save min, max, and input tensor for backward pass
-        ctx.min = min
-        ctx.max = max
-        ctx.save_for_backward(input)
-        # Clamp the input tensor
-        return input.clamp(min, max)
-
-    @staticmethod
-    def backward(ctx, grad_in):
-        """
-        Backward pass computes the gradient for the clamped input.
-
-        Parameters:
-        grad_in (torch.Tensor): Incoming gradient.
-
-        Returns:
-        tuple: Gradient for input, None for min and max.
-        """
-        input, = ctx.saved_tensors
-        # Compute the gradient only for values within the clamp range
-        return grad_in * (grad_in * (input - input.clamp(ctx.min, ctx.max)) >= 0), None, None
-
-    
-# Alias for applying the ReplaceGrad function
-REPLACE_GRAD = ReplaceGrad.apply
-
-# Alias for applying the ClampWithGrad function
-CLAMP_WITH_GRAD = ClampWithGrad.apply
-    
     
 def load_vqgan_model(config_path, checkpoint_path):
     """
@@ -243,7 +155,7 @@ def generate_iteration(model, c_code, c_indices, z_indices, iteration=0, tempera
     return model.decode_to_img(idx, z_code_shape)
 
 
-def generate_image(model, config, num_iterations=3, conditional=True):
+def generate_image(model, config, num_iterations=3, conditional=True, num_categories_expected=183):
     """
     Main function to run the image generation process.
     Args:
@@ -257,13 +169,14 @@ def generate_image(model, config, num_iterations=3, conditional=True):
             config.INITIAL_IMAGE,
             plot_segmentation=True,
             device=model.device,
+            num_categories_expected=num_categories_expected,
         )
         c_code, c_indices = model.encode_to_c(segmentation_tensor)
         
     else:
         random_input = create_random_input(
             (config.HEIGHT, config.WIDTH), 
-            183,
+            num_categories_expected,
             model.device,
         )
         c_code, c_indices = model.encode_to_c(random_input)
@@ -294,12 +207,46 @@ def generate_image(model, config, num_iterations=3, conditional=True):
     return final_image
 
 
-import torch
-import numpy as np
-from PIL import Image
-import torchvision.transforms as transforms
-import torchvision.transforms.functional as TF
-import matplotlib.pyplot as plt
+def generate_image_from_text(user_query, transistor_model, vqgan_model, encode_text_fn, device, n_iterations=1):
+    # Encode text
+    text_latent, _ = encode_text_fn([user_query])
+    text_latent = text_latent.mean(dim=1).to(device)  # Average over token dimension
+
+    # Pass through Transistor
+    with torch.no_grad():
+        image_latent = transistor_model(text_latent)
+
+    # Reshape
+    image_latent = image_latent.view(1, 256, 16, 16)
+
+    # Quantize (this step depends on VQGAN's specific implementation)
+    c_code, _, [_, _, c_indices] = vqgan_model.first_stage_model.quantize(image_latent)
+    
+    print("c_code", c_code.shape, c_code.dtype)
+    print("c_indices", c_indices.shape, c_indices.dtype)
+
+    z_indices = torch.randint(256, c_indices.shape, device=vqgan_model.device)
+    initial_image = vqgan_model.decode_to_img(z_indices, c_code.shape)
+
+    print("Initial random image:")
+    show_image(initial_image)
+
+    for iteration in range(n_iterations):
+        print(f"⛳️ Starting iteration {iteration + 1}/{n_iterations}")
+        final_image = generate_iteration(
+            vqgan_model, 
+            c_code, 
+            c_indices, 
+            z_indices, 
+            temperature=config.TEMPERATURE, 
+            top_k=config.TOP_K, 
+            update_every=config.UPDATE_EVERY,
+            iteration=iteration,
+        )
+
+    print("✅ All iterations completed.")
+    
+    return final_image
 
 
 def preprocess_vqgan(x):
