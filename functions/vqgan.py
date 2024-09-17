@@ -45,36 +45,40 @@ def load_vqgan_model(config_path, checkpoint_path):
     
     return model
     
-    
-def load_and_process_segmentation(path, plot_segmentation=True, num_categories_expected=183, device='cuda'):
+     
+def load_and_process_segmentation(path, plot_segmentation=True, num_categories_expected=183, device='cuda', target_size=None):
     """
-    Load a segmentation image and process it for VQGAN input.
-
+    Load a segmentation image, process it for VQGAN input, and resize to target dimensions.
     Args:
     path (str): Path to the segmentation image.
+    plot_segmentation (bool): Whether to plot the segmentation.
     num_categories_expected (int): Number of categories the model expects.
     device (str): Device to use for tensor operations.
-
+    target_size (tuple): Target size for the segmentation tensor (height, width).
     Returns:
-    torch.Tensor: Processed segmentation tensor.
+    torch.Tensor: Processed and resized segmentation tensor.
     """
     segmentation = np.array(Image.open(path))
     
     num_categories_in_image = np.max(segmentation) + 1
     print(f"⛳️ Number of categories in segmentation image: {num_categories_in_image}")
-
+    
     segmentation_one_hot = np.eye(num_categories_in_image)[segmentation]
     segmentation_tensor = torch.tensor(segmentation_one_hot.transpose(2, 0, 1)[None], 
                                        dtype=torch.float32, device=device)
-
+    
     if num_categories_in_image < num_categories_expected:
         padding = torch.zeros((1, num_categories_expected - num_categories_in_image, 
                                *segmentation_tensor.shape[2:]), device=device)
         segmentation_tensor = torch.cat([segmentation_tensor, padding], dim=1)
     else:
         segmentation_tensor = segmentation_tensor[:, :num_categories_expected, :, :]
+    
+    if target_size:
+        # Resize the segmentation tensor to the target size
+        segmentation_tensor = F.interpolate(segmentation_tensor, size=target_size, mode='nearest')
 
-    print(f"⛳️ Segmentation tensor shape: {segmentation_tensor.shape}")
+        print(f"⛳️ Resized segmentation tensor shape: {segmentation_tensor.shape}")
     
     if plot_segmentation:
         show_segmentation(segmentation_tensor)
@@ -82,7 +86,9 @@ def load_and_process_segmentation(path, plot_segmentation=True, num_categories_e
     return segmentation_tensor
 
 
-def generate_iteration(model, c_code, c_indices, z_indices, iteration=0, temperature=1.0, top_k=100, update_every=50):
+def generate_iteration(
+    model, c_code, c_indices, z_indices, iteration=0, temperature=1.0, top_k=100, update_every=50, sampling_folder='sampling'
+):
     """
     Generate an image using VQGAN.
     
@@ -146,7 +152,7 @@ def generate_iteration(model, c_code, c_indices, z_indices, iteration=0, tempera
             step = i * z_code_shape[3] + j
             if step % update_every == 0 or step == z_code_shape[2] * z_code_shape[3] - 1:
                 x_sample = model.decode_to_img(idx, z_code_shape)
-                save_image(x_sample, step, iteration, sampling_folder='sampling')
+                save_image(x_sample, step, iteration, sampling_folder=sampling_folder)
                 clear_output(wait=True)
                 print(f"🕰️ Time: {time.time() - start_t:.2f} seconds")
                 print(f"⛳️ Step: ({i},{j}) | Local: ({local_i},{local_j}) | Crop: ({i_start}:{i_end},{j_start}:{j_end})")
@@ -155,7 +161,7 @@ def generate_iteration(model, c_code, c_indices, z_indices, iteration=0, tempera
     return model.decode_to_img(idx, z_code_shape)
 
 
-def generate_image(model, config, num_iterations=3, conditional=True, num_categories_expected=183):
+def generate_image(model, config, num_iterations=3, conditional=True, num_categories_expected=183, sampling_folder='sampling'):
     """
     Main function to run the image generation process.
     Args:
@@ -201,53 +207,11 @@ def generate_image(model, config, num_iterations=3, conditional=True, num_catego
             top_k=config.TOP_K, 
             update_every=config.UPDATE_EVERY,
             iteration=iteration,
+            sampling_folder=sampling_folder,
         )
 
     print("✅ All iterations completed.")
     return final_image
-
-
-def generate_image_from_text(user_query, transistor_model, vqgan_model, encode_text_fn, device, n_iterations=1):
-    # Encode text
-    text_latent, _ = encode_text_fn([user_query])
-    text_latent = text_latent.mean(dim=1).to(device)  # Average over token dimension
-
-    # Pass through Transistor
-    with torch.no_grad():
-        image_latent = transistor_model(text_latent)
-
-    # Reshape
-    image_latent = image_latent.view(1, 256, 16, 16)
-
-    # Quantize (this step depends on VQGAN's specific implementation)
-    c_code, _, [_, _, c_indices] = vqgan_model.first_stage_model.quantize(image_latent)
-    
-    print("c_code", c_code.shape, c_code.dtype)
-    print("c_indices", c_indices.shape, c_indices.dtype)
-
-    z_indices = torch.randint(256, c_indices.shape, device=vqgan_model.device)
-    initial_image = vqgan_model.decode_to_img(z_indices, c_code.shape)
-
-    print("Initial random image:")
-    show_image(initial_image)
-
-    for iteration in range(n_iterations):
-        print(f"⛳️ Starting iteration {iteration + 1}/{n_iterations}")
-        final_image = generate_iteration(
-            vqgan_model, 
-            c_code, 
-            c_indices, 
-            z_indices, 
-            temperature=config.TEMPERATURE, 
-            top_k=config.TOP_K, 
-            update_every=config.UPDATE_EVERY,
-            iteration=iteration,
-        )
-
-    print("✅ All iterations completed.")
-    
-    return final_image
-
 
 def preprocess_vqgan(x):
     x = 2. * x - 1.

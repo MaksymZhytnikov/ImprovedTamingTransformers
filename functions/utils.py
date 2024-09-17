@@ -8,6 +8,8 @@ import imageio
 import numpy as np
 import cv2
 import re
+import IPython.display as play
+
 
 def clear_folder(folder_path='sampling'):
     """
@@ -179,6 +181,18 @@ def create_gif(output_path='output.gif', folder_path='sampling', duration=100):
             print(f"❌ Error saving GIF: {e}")
     else:
         print("🤔 No images found to create GIF")
+        
+
+def get_gif(gif_name, folder_path='sampling', duration=400):
+    # Create GIF
+    create_gif(
+        gif_name, 
+        folder_path=folder_path, 
+        duration=duration,
+    )
+
+    # Display the GIF
+    play.display(play.Image(filename=gif_name))
 
     
 def save_image(generated_image, step, iteration='', sampling_folder='sampling', training=False):
